@@ -1,0 +1,139 @@
+name: Bundle Size - PR vs Base
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: bundle-size-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundle-size:
+    name: Bundle size comparison
+    runs-on: ubuntu-latest
+
+    # Add build-time env vars here only if your app requires them.
+    # Example:
+    # env:
+    #   NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Prepare base branch worktree
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=1
+          git worktree add ../bundle-size-base "origin/$BASE_REF"
+
+      - name: Install PR dependencies
+        run: npm ci
+
+      - name: Install base dependencies
+        working-directory: ../bundle-size-base
+        run: npm ci
+
+      - name: Build PR branch
+        env:
+          CI: true
+        run: npm run build
+
+      - name: Analyze PR bundle size
+        run: |
+          mkdir -p artifacts
+          node ./scripts/ci/bundle-size.mjs analyze \
+            --project-dir "$GITHUB_WORKSPACE" \
+            --output "$GITHUB_WORKSPACE/artifacts/pr-bundle-size.json"
+
+      - name: Build base branch
+        working-directory: ../bundle-size-base
+        env:
+          CI: true
+        run: npm run build
+
+      - name: Analyze base bundle size
+        run: |
+          node ./scripts/ci/bundle-size.mjs analyze \
+            --project-dir "$GITHUB_WORKSPACE/../bundle-size-base" \
+            --output "$GITHUB_WORKSPACE/artifacts/base-bundle-size.json"
+
+      - name: Render comparison report
+        run: |
+          node ./scripts/ci/bundle-size.mjs compare \
+            --base "$GITHUB_WORKSPACE/artifacts/base-bundle-size.json" \
+            --head "$GITHUB_WORKSPACE/artifacts/pr-bundle-size.json" \
+            --summary-output "$GITHUB_WORKSPACE/artifacts/bundle-size-summary.md" \
+            --comment-output "$GITHUB_WORKSPACE/artifacts/bundle-size-comment.md"
+
+          cat "$GITHUB_WORKSPACE/artifacts/bundle-size-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload bundle size artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-size-report
+          path: artifacts
+
+      - name: Publish PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const body = fs.readFileSync('./artifacts/bundle-size-comment.md', 'utf8');
+            const marker = '<!-- bundle-size-report -->';
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Cleanup worktree
+        if: always()
+        shell: bash
+        run: git worktree remove ../bundle-size-base --force
