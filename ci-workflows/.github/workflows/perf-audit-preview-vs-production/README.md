@@ -1,48 +1,50 @@
 # Perf Audit — Preview vs Production
 
-Workflow для сравнения Lighthouse метрик между **Preview deployment** и **Production** после успешного `deployment_status` события.
+Workflow that compares Lighthouse metrics between a Preview deployment and Production after a successful `deployment_status` event.
 
-## Что делает workflow
+## What this workflow does
 
-1. Берёт Preview URL из `github.event.deployment_status.environment_url`.
-2. Берёт Production URL из секрета `PROD_URL`.
-3. Добавляет Vercel bypass query params (секрет `VERCEL_AUTOMATION_BYPASS_SECRET`) для защищённых preview-окружений.
-4. Запускает Lighthouse CI для Preview и Production.
-5. Генерирует comparison summary в `GITHUB_STEP_SUMMARY`:
+1. Reads Preview URL from `github.event.deployment_status.environment_url`.
+2. Reads Production URL from the `PROD_URL` secret.
+3. Adds Vercel bypass query parameters (using `VERCEL_AUTOMATION_BYPASS_SECRET`) for protected preview environments.
+4. Runs Lighthouse CI for Preview and Production.
+5. Generates a comparison summary in `GITHUB_STEP_SUMMARY` for:
    - Performance
    - FCP
    - LCP
    - Speed Index
    - TBT
    - CLS
-6. Фейлит job, если один из аудитов завершился неуспешно.
+6. Fails the job if at least one audit is unsuccessful.
 
-## Файлы в этом workflow
+## Files
 
-- `perf-audit-preview-vs-production.yml` — workflow.
+- `perf-audit-preview-vs-production.yml` — workflow definition.
+- `scripts/publish_lighthouse_summary.py` — summary generation script extracted from workflow YAML.
 
 ## Required secrets
 
-- `PROD_URL` — production URL (например, `https://your-domain.com`).
-- `VERCEL_AUTOMATION_BYPASS_SECRET` — секрет для обхода preview protection в CI.
+- `PROD_URL` — production URL (example: `https://your-domain.com`).
+- `VERCEL_AUTOMATION_BYPASS_SECRET` — secret for bypassing preview protection in CI.
 
-## Как использовать в вашем проекте
+## How to use in your project
 
-Скопируйте файл:
+Copy these files:
 
 ```text
 your-project/
   .github/workflows/perf-audit-preview-vs-production/perf-audit-preview-vs-production.yml
+  .github/workflows/perf-audit-preview-vs-production/scripts/publish_lighthouse_summary.py
 ```
 
-Также в корне целевого проекта должен быть `lighthouserc.json`, так как workflow валидирует его наличие перед запуском.
+Also ensure `lighthouserc.json` exists in the target repository root, because the workflow validates it before running Lighthouse.
 
-## Важное замечание о Lighthouse
+## Lighthouse stability note
 
-Lighthouse метрики недетерминированы: одиночный прогон может заметно отличаться из-за шума CI-окружения (CPU/сеть), кэшей, состояния third-party скриптов и backend latency.
+Lighthouse metrics are not fully deterministic. A single run can vary due to CI runner noise (CPU/network), cache state, third-party scripts, and backend latency.
 
-Для более стабильных решений рекомендуется:
+For more stable decisions, use:
 
-- делать несколько прогонов и сравнивать median/p75,
-- добавлять performance budgets,
-- отслеживать тренд метрик во времени.
+- multiple runs and median/p75 comparison,
+- performance budgets,
+- historical trend tracking.

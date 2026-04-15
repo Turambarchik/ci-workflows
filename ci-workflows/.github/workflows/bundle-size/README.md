@@ -1,23 +1,23 @@
 # Bundle Size CI — PR vs Base
 
-GitHub Action, который сравнивает размер Next.js bundle между PR-веткой и базовой веткой и публикует diff-таблицу в комментарии к PR.
+GitHub Action that compares Next.js bundle size between the PR branch and the base branch, then posts a diff table as a PR comment.
 
-## Что делает workflow
+## What this workflow does
 
-1. Checkout PR-ветки.
-2. Поднимает worktree для base-ветки.
-3. Запускает `npm ci` и `npm run build` для обеих веток.
-4. Анализирует build-манифесты через `ci-workflows/scripts/ci/bundle-size.mjs`.
-5. Формирует summary + PR comment с изменениями по роутам и total.
+1. Checks out the PR branch.
+2. Creates a Git worktree for the base branch.
+3. Runs `npm ci` and `npm run build` for both branches.
+4. Analyzes build manifests using `ci-workflows/scripts/ci/bundle-size.mjs`.
+5. Produces a summary and PR comment with per-route and total diffs.
 
-## Файлы в этом workflow
+## Files
 
-- `bundle-size.yml` — workflow.
-- `ci-workflows/scripts/ci/bundle-size.mjs` — analyzer script (общий для workflow).
+- `bundle-size.yml` — workflow definition.
+- `ci-workflows/scripts/ci/bundle-size.mjs` — analyzer script used by the workflow.
 
-## Как использовать в вашем проекте
+## How to use in your project
 
-Скопируйте файлы:
+Copy these files:
 
 ```text
 your-project/
@@ -25,12 +25,12 @@ your-project/
   scripts/ci/bundle-size.mjs
 ```
 
-> В workflow путь к скрипту: `./scripts/ci/bundle-size.mjs`, поэтому в целевом проекте скрипт должен лежать именно там.
+> The workflow uses `./scripts/ci/bundle-size.mjs`, so the script should keep this path in the target repository.
 
-Если нужны env-переменные для build, раскомментируйте блок `env:` в `bundle-size.yml` и добавьте Secrets в GitHub Actions.
+If your build requires environment variables, uncomment the `env:` block in `bundle-size.yml` and add GitHub Actions secrets.
 
-## Требования
+## Requirements
 
 - Next.js
 - Node.js 20+
-- `package-lock.json` (используется `npm ci`)
+- `package-lock.json` (the workflow uses `npm ci`)
