@@ -1,0 +1,116 @@
+name: Perf Audit - Preview vs Production
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+env:
+  # Public URL of your production app (store in GitHub Actions secret PROD_URL)
+  PRODUCTION_URL: ${{ secrets.PROD_URL }}
+
+jobs:
+  lighthouse-audit:
+    name: Lighthouse audit
+    # Run only when deployment succeeded (e.g., Vercel preview is ready)
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve audit URLs
+        id: urls
+        shell: bash
+        env:
+          RAW_PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
+          PROD_URL: ${{ env.PRODUCTION_URL }}
+          # Secret for bypassing protected preview deployments (when enabled)
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          if [ -z "$RAW_PREVIEW_URL" ]; then
+            echo "Preview URL is empty. deployment_status.environment_url was not provided."
+            exit 1
+          fi
+
+          if [ -z "$PROD_URL" ]; then
+            echo "PRODUCTION_URL is empty. Add PROD_URL in GitHub Secrets."
+            exit 1
+          fi
+
+          if [ -z "$VERCEL_AUTOMATION_BYPASS_SECRET" ]; then
+            echo "VERCEL_AUTOMATION_BYPASS_SECRET is empty. Add it in GitHub repository secrets."
+            exit 1
+          fi
+
+          PREVIEW_URL="${RAW_PREVIEW_URL%/}"
+
+          # Add Vercel bypass params so LHCI can access protected preview URLs in CI.
+          if [[ "$PREVIEW_URL" == *\?* ]]; then
+            PREVIEW_URL="${PREVIEW_URL}&x-vercel-protection-bypass=${VERCEL_AUTOMATION_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true"
+          else
+            PREVIEW_URL="${PREVIEW_URL}?x-vercel-protection-bypass=${VERCEL_AUTOMATION_BYPASS_SECRET}&x-vercel-set-bypass-cookie=true"
+          fi
+
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "preview_display_url=${RAW_PREVIEW_URL%/}" >> "$GITHUB_OUTPUT"
+          echo "production_url=${PROD_URL%/}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Lighthouse config exists
+        shell: bash
+        run: |
+          test -f ./lighthouserc.json || (echo "lighthouserc.json not found in repository root" && exit 1)
+
+      - name: Verify summary script exists
+        shell: bash
+        run: |
+          test -f ./ci-workflows/.github/workflows/perf-audit-preview-vs-production/scripts/publish_lighthouse_summary.py || (echo "publish_lighthouse_summary.py not found" && exit 1)
+
+      - name: Wait for deployment to stabilize
+        run: sleep 20
+
+      - name: Audit preview deployment
+        id: preview
+        continue-on-error: true
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            ${{ steps.urls.outputs.preview_url }}
+          configPath: ./lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: false
+
+      - name: Audit production deployment
+        id: production
+        continue-on-error: true
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            ${{ steps.urls.outputs.production_url }}
+          configPath: ./lighthouserc.json
+          uploadArtifacts: true
+          temporaryPublicStorage: false
+
+      - name: Publish comparison summary
+        if: always()
+        shell: bash
+        env:
+          PREVIEW_URL: ${{ steps.urls.outputs.preview_display_url }}
+          PRODUCTION_URL: ${{ steps.urls.outputs.production_url }}
+          PREVIEW_MANIFEST: ${{ steps.preview.outputs.manifest }}
+          PRODUCTION_MANIFEST: ${{ steps.production.outputs.manifest }}
+          PREVIEW_RESULTS_PATH: ${{ steps.preview.outputs.resultsPath }}
+          PRODUCTION_RESULTS_PATH: ${{ steps.production.outputs.resultsPath }}
+          PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+          PRODUCTION_OUTCOME: ${{ steps.production.outcome }}
+        run: |
+          python3 ./ci-workflows/.github/workflows/perf-audit-preview-vs-production/scripts/publish_lighthouse_summary.py
+
+      - name: Fail workflow when audit failed
+        if: steps.preview.outcome != 'success' || steps.production.outcome != 'success'
+        shell: bash
+        run: |
+          echo "One or more Lighthouse audits failed."
+          exit 1
