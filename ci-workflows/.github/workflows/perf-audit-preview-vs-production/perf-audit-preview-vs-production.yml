@@ -55,6 +55,7 @@ jobs:
           fi
 
           echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "preview_display_url=${RAW_PREVIEW_URL%/}" >> "$GITHUB_OUTPUT"
           echo "production_url=${PROD_URL%/}" >> "$GITHUB_OUTPUT"
 
       - name: Verify Lighthouse config exists
@@ -78,8 +79,8 @@ jobs:
           urls: |
             ${{ steps.urls.outputs.preview_url }}
           configPath: ./lighthouserc.json
-          uploadArtifacts: false
-          temporaryPublicStorage: true
+          uploadArtifacts: true
+          temporaryPublicStorage: false
 
       - name: Audit production deployment
         id: production
@@ -89,17 +90,15 @@ jobs:
           urls: |
             ${{ steps.urls.outputs.production_url }}
           configPath: ./lighthouserc.json
-          uploadArtifacts: false
-          temporaryPublicStorage: true
+          uploadArtifacts: true
+          temporaryPublicStorage: false
 
       - name: Publish comparison summary
         if: always()
         shell: bash
         env:
-          PREVIEW_URL: ${{ steps.urls.outputs.preview_url }}
+          PREVIEW_URL: ${{ steps.urls.outputs.preview_display_url }}
           PRODUCTION_URL: ${{ steps.urls.outputs.production_url }}
-          PREVIEW_LINKS: ${{ steps.preview.outputs.links }}
-          PRODUCTION_LINKS: ${{ steps.production.outputs.links }}
           PREVIEW_MANIFEST: ${{ steps.preview.outputs.manifest }}
           PRODUCTION_MANIFEST: ${{ steps.production.outputs.manifest }}
           PREVIEW_RESULTS_PATH: ${{ steps.preview.outputs.resultsPath }}

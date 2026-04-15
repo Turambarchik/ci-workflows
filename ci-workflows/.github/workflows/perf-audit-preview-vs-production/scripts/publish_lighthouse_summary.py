@@ -1,11 +1,10 @@
 import json
 import os
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 
 preview_url = os.environ.get("PREVIEW_URL", "")
 production_url = os.environ.get("PRODUCTION_URL", "")
-preview_links_raw = os.environ.get("PREVIEW_LINKS", "")
-production_links_raw = os.environ.get("PRODUCTION_LINKS", "")
 preview_manifest_raw = os.environ.get("PREVIEW_MANIFEST", "")
 production_manifest_raw = os.environ.get("PRODUCTION_MANIFEST", "")
 preview_results_path = os.environ.get("PREVIEW_RESULTS_PATH", "")
@@ -14,18 +13,21 @@ preview_outcome = os.environ.get("PREVIEW_OUTCOME", "")
 production_outcome = os.environ.get("PRODUCTION_OUTCOME", "")
 
 
+def sanitize_url(url):
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    except Exception:
+        return url.split("?")[0]
+
+
 def parse_json(raw, default):
     try:
         return json.loads(raw) if raw else default
     except Exception:
         return default
-
-
-def first_report_link(raw):
-    data = parse_json(raw, {})
-    if isinstance(data, dict) and data:
-        return list(data.values())[-1]
-    return ""
 
 
 def parse_manifest(raw):
@@ -160,9 +162,6 @@ def build_overall_result(performance_delta):
     return "Result: 😐 Preview performance is effectively unchanged."
 
 
-preview_report = first_report_link(preview_links_raw)
-production_report = first_report_link(production_links_raw)
-
 preview_manifest = parse_manifest(preview_manifest_raw)
 production_manifest = parse_manifest(production_manifest_raw)
 
@@ -239,20 +238,11 @@ lines.append("")
 lines.append(build_overall_result(performance_delta))
 lines.append("")
 lines.append("**Preview URL**  ")
-lines.append(preview_url or "—")
+lines.append(sanitize_url(preview_url) or "—")
 lines.append("")
 lines.append("**Production URL**  ")
-lines.append(production_url or "—")
+lines.append(sanitize_url(production_url) or "—")
 lines.append("")
-
-if preview_report:
-    lines.append("**Preview report**  ")
-    lines.append(f"[Open report]({preview_report})")
-    lines.append("")
-if production_report:
-    lines.append("**Production report**  ")
-    lines.append(f"[Open report]({production_report})")
-    lines.append("")
 
 if preview_outcome != "success":
     lines.append("> Preview audit failed. Most likely causes: preview protection still blocks CI, the bypass secret is incorrect, or the preview page itself failed to load consistently.")

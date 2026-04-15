@@ -15,7 +15,14 @@ Workflow that compares Lighthouse metrics between a Preview deployment and Produ
    - Speed Index
    - TBT
    - CLS
-6. Fails the job if at least one audit is unsuccessful.
+6. Uploads Lighthouse output as private GitHub Actions artifacts (`uploadArtifacts: true`).
+7. Fails the job if at least one audit is unsuccessful.
+
+## Security notes
+
+- `temporaryPublicStorage` is disabled for both audits to avoid creating public report links.
+- The summary script sanitizes URLs before writing them to `GITHUB_STEP_SUMMARY`.
+- The workflow does not print `VERCEL_AUTOMATION_BYPASS_SECRET` or tokenized URLs.
 
 ## Files
 
